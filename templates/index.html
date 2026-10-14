@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Luraph v14.9 Deobfuscator</title>
+<link rel="icon" href="/static/logo.png">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="container">
+
+    <header>
+        <img src="/static/logo.png" alt="logo" class="logo" onerror="this.style.display='none'">
+        <div>
+            <h1>Luraph Deobfuscator</h1>
+            <p class="subtitle">
+                v14.7 / v14.8 / v14.9
+                <a href="https://github.com/KryptIT/luraph-v15-v14.x-deobfuscator"
+                   target="_blank" class="link">[repo]</a>
+            </p>
+        </div>
+    </header>
+
+    <section class="panel">
+        <h2>1. Input</h2>
+        <input type="text" id="scriptUrl"
+               placeholder="https://raw.githubusercontent.com/.../script.lua">
+        <div class="divider">— OR —</div>
+        <textarea id="scriptBody"
+            placeholder="-- Luraph Obfuscator v14.9 ...&#10;paste obfuscated code here"></textarea>
+        <div class="btn-row">
+            <button id="btnFetch" class="secondary">Fetch URL</button>
+            <button id="btnAnalyze">Analyze</button>
+            <button id="btnDeobf">Deobfuscate</button>
+            <button id="btnClear" class="secondary">Clear</button>
+        </div>
+        <div id="status" class="status" style="display:none;"></div>
+    </section>
+
+    <section class="panel" id="analysisPanel" style="display:none;">
+        <h2>2. Analysis</h2>
+        <div class="info-grid" id="infoGrid"></div>
+    </section>
+
+    <section class="panel" id="outputPanel" style="display:none;">
+        <h2>3. Output</h2>
+        <div class="btn-row">
+            <button id="btnDownload" class="secondary">Download .lua</button>
+            <button id="btnCopy" class="secondary">Copy</button>
+        </div>
+        <pre id="outputPre"></pre>
+    </section>
+
+    <footer>
+        <a href="https://discord.gg/kurokoai" class="link">discord.gg/kurokoai</a>
+    </footer>
+
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>
