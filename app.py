@@ -3,6 +3,8 @@ import re
 import io
 import json
 import time
+import shutil
+import zipfile
 import subprocess
 import urllib.request
 from flask import Flask, render_template, request, jsonify, send_file
@@ -11,14 +13,24 @@ app = Flask(__name__)
 
 DEOBF_REPO = "https://github.com/KryptIT/luraph-v15-v14.x-deobfuscator.git"
 DEOBF_DIR = "/tmp/luraph-deobf"
+BIN_DIR = os.path.join(DEOBF_DIR, "Deobfuscator", "deobf", "bin")
+LUAU_URL = "https://github.com/luau-lang/luau/releases/download/0.653/luau-ubuntu.zip"
 LOGO_URL = "https://raw.githubusercontent.com/juixcx/jui-99/879075e95a7d841e1859fefbb9291b5c3dbe9163/file_00000000b19c82119a08c4a5ef92d489.png"
 LOGO_PATH = os.path.join(os.path.dirname(__file__), "static", "logo.png")
+
+SETUP_DONE = False
 
 
 # ============================================================
 # SETUP
 # ============================================================
-def ensure_repo():
+def setup_all():
+    """Clone repo + download luau binaries — เรียกก่อน deobf ครั้งแรก"""
+    global SETUP_DONE
+    if SETUP_DONE:
+        return True, "already setup"
+
+    # 1) clone repo
     if not os.path.exists(DEOBF_DIR):
         try:
             subprocess.run(
@@ -26,8 +38,37 @@ def ensure_repo():
                 check=True, capture_output=True, timeout=300
             )
         except Exception as e:
-            return False, f"clone failed: {e}"
-    return True, "ok"
+            return False, f"git clone failed: {e}"
+
+    # 2) mkdir bin
+    os.makedirs(BIN_DIR, exist_ok=True)
+
+    # 3) download luau binary ถ้ายังไม่มี
+    luau_ast = os.path.join(BIN_DIR, "luau-ast")
+    if not os.path.exists(luau_ast):
+        try:
+            zip_path = os.path.join(BIN_DIR, "luau.zip")
+            urllib.request.urlretrieve(LUAU_URL, zip_path)
+
+            with zipfile.ZipFile(zip_path, "r") as z:
+                z.extractall(BIN_DIR)
+
+            os.remove(zip_path)
+
+            # chmod +x ทุกไฟล์ใน bin
+            for f in os.listdir(BIN_DIR):
+                fp = os.path.join(BIN_DIR, f)
+                if os.path.isfile(fp):
+                    os.chmod(fp, 0o755)
+        except Exception as e:
+            return False, f"luau download failed: {e}"
+
+    # 4) verify
+    if not os.path.exists(luau_ast):
+        return False, f"luau-ast not found after setup at {luau_ast}"
+
+    SETUP_DONE = True
+    return True, "setup complete"
 
 
 def ensure_logo():
@@ -95,6 +136,12 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/api/setup", methods=["POST"])
+def api_setup():
+    ok, msg = setup_all()
+    return jsonify({"ok": ok, "message": msg})
+
+
 @app.route("/api/analyze", methods=["POST"])
 def api_analyze():
     data = request.get_json(silent=True) or {}
@@ -121,9 +168,10 @@ def api_analyze():
 
 @app.route("/api/deobf", methods=["POST"])
 def api_deobf():
-    ok, msg = ensure_repo()
+    # setup ตอน runtime
+    ok, msg = setup_all()
     if not ok:
-        return jsonify({"error": msg}), 500
+        return jsonify({"error": f"setup failed: {msg}"}), 500
 
     data = request.get_json(silent=True) or {}
     script = data.get("script", "")
@@ -145,16 +193,15 @@ def api_deobf():
     if not os.path.isdir(cli_dir):
         return jsonify({"error": "deobf cli folder not found"}), 500
 
-    # ---- สร้าง args ----
     args = [
         "python", "cli.py", in_path,
         "-o", out_path,
         "--engine", engine,
-        "--strings",           # dump string constants
-        "--max-runs", "50",    # จำนวนรอบ max
-        "--devirt-rounds", "10",  # devirtualize 10 รอบ
-        "--timeout", "500",    # timeout in cli
-        "--debug",             # debug log
+        "--strings",
+        "--max-runs", "50",
+        "--devirt-rounds", "10",
+        "--timeout", "500",
+        "--debug",
     ]
 
     try:
@@ -214,6 +261,7 @@ def api_health():
     return jsonify({
         "status": "ok",
         "repo": os.path.exists(DEOBF_DIR),
+        "bin": os.path.exists(os.path.join(BIN_DIR, "luau-ast")),
         "logo": os.path.exists(LOGO_PATH),
     })
 
