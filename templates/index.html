@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Luraph v14.9 Deobfuscator</title>
+<title>Luraph · Prometheus · MoonSec · Moonveil — Deobfuscator</title>
 <link rel="icon" href="/static/logo.png">
 <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -13,9 +13,9 @@
     <header>
         <img src="/static/logo.png" alt="logo" class="logo" onerror="this.style.display='none'">
         <div>
-            <h1>Luraph Deobfuscator</h1>
+            <h1>Multi Deobfuscator</h1>
             <p class="subtitle">
-                v14.7 / v14.8 / v14.9
+                Luraph v14.9 · Prometheus · MoonSec V2/V3 · Moonveil
                 <a href="https://github.com/KryptIT/luraph-v15-v14.x-deobfuscator"
                    target="_blank" class="link">[repo]</a>
             </p>
@@ -24,11 +24,24 @@
 
     <section class="panel">
         <h2>1. Input</h2>
+
+        <label style="display:block;color:#6c7680;font-size:12px;margin-bottom:6px;">
+            Obfuscator:
+        </label>
+        <select id="engineSelect"
+            style="width:100%;background:#0a0e14;border:1px solid #1f2937;color:#c5c8c6;padding:10px 12px;border-radius:4px;font-family:monospace;font-size:13px;margin-bottom:12px;">
+            <option value="luraph_14.9">Luraph v14.9</option>
+            <option value="prometheus">Prometheus</option>
+            <option value="moonsec_v3">MoonSec V3</option>
+            <option value="moonsec_v2">MoonSec V2</option>
+            <option value="moonveil">Moonveil</option>
+        </select>
+
         <input type="text" id="scriptUrl"
                placeholder="https://raw.githubusercontent.com/.../script.lua">
         <div class="divider">— OR —</div>
         <textarea id="scriptBody"
-            placeholder="-- Luraph Obfuscator v14.9 ...&#10;paste obfuscated code here"></textarea>
+            placeholder="paste obfuscated code here"></textarea>
         <div class="btn-row">
             <button id="btnFetch" class="secondary">Fetch URL</button>
             <button id="btnAnalyze">Analyze</button>
