@@ -1,7 +1,6 @@
 import os
 import re
 import io
-import json
 import time
 import shutil
 import zipfile
@@ -19,16 +18,25 @@ LOGO_URL = "https://raw.githubusercontent.com/juixcx/jui-99/879075e95a7d841e1859
 LOGO_PATH = os.path.join(os.path.dirname(__file__), "static", "logo.png")
 
 SETUP_DONE = False
+SETUP_MSG = "not started"
 
 
 # ============================================================
-# SETUP
+# HELPERS
 # ============================================================
+def fetch_script_from_url(url):
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.read().decode("utf-8", errors="replace"), None
+    except Exception as e:
+        return None, str(e)
+
+
 def setup_all():
-    """Clone repo + download luau binaries — เรียกก่อน deobf ครั้งแรก"""
-    global SETUP_DONE
+    global SETUP_DONE, SETUP_MSG
     if SETUP_DONE:
-        return True, "already setup"
+        return True, SETUP_MSG
 
     # 1) clone repo
     if not os.path.exists(DEOBF_DIR):
@@ -38,12 +46,12 @@ def setup_all():
                 check=True, capture_output=True, timeout=300
             )
         except Exception as e:
-            return False, f"git clone failed: {e}"
+            SETUP_MSG = f"git clone failed: {e}"
+            return False, SETUP_MSG
 
-    # 2) mkdir bin
     os.makedirs(BIN_DIR, exist_ok=True)
 
-    # 3) download luau binary ถ้ายังไม่มี
+    # 2) download luau binary
     luau_ast = os.path.join(BIN_DIR, "luau-ast")
     if not os.path.exists(luau_ast):
         try:
@@ -52,23 +60,26 @@ def setup_all():
 
             with zipfile.ZipFile(zip_path, "r") as z:
                 z.extractall(BIN_DIR)
-
             os.remove(zip_path)
 
-            # chmod +x ทุกไฟล์ใน bin
             for f in os.listdir(BIN_DIR):
                 fp = os.path.join(BIN_DIR, f)
                 if os.path.isfile(fp):
-                    os.chmod(fp, 0o755)
+                    try:
+                        os.chmod(fp, 0o755)
+                    except Exception:
+                        pass
         except Exception as e:
-            return False, f"luau download failed: {e}"
+            SETUP_MSG = f"luau download failed: {e}"
+            return False, SETUP_MSG
 
-    # 4) verify
     if not os.path.exists(luau_ast):
-        return False, f"luau-ast not found after setup at {luau_ast}"
+        SETUP_MSG = f"luau-ast not found at {luau_ast}"
+        return False, SETUP_MSG
 
     SETUP_DONE = True
-    return True, "setup complete"
+    SETUP_MSG = "setup complete"
+    return True, SETUP_MSG
 
 
 def ensure_logo():
@@ -148,18 +159,15 @@ def api_analyze():
     script = data.get("script", "")
 
     if not script and data.get("url"):
-        try:
-            req = urllib.request.Request(
-                data["url"], headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=30) as r:
-                script = r.read().decode("utf-8", errors="replace")
-        except Exception as e:
-            return jsonify({"error": f"fetch failed: {e}"}), 400
+        script, err = fetch_script_from_url(data["url"])
+        if err:
+            return jsonify({"error": f"fetch failed: {err}"}), 400
 
     if not script or len(script) < 100:
         return jsonify({"error": "script too short"}), 400
 
     result = analyze(script)
+    result["script"] = script  # ← ส่ง script กลับให้ frontend
     cmd = (f"python cli.py input.lua -o output.lua "
            f"--engine {result['version'] if result['version'] != 'unknown' else '14.9'}")
     result["command"] = cmd
@@ -168,7 +176,6 @@ def api_analyze():
 
 @app.route("/api/deobf", methods=["POST"])
 def api_deobf():
-    # setup ตอน runtime
     ok, msg = setup_all()
     if not ok:
         return jsonify({"error": f"setup failed: {msg}"}), 500
@@ -176,6 +183,12 @@ def api_deobf():
     data = request.get_json(silent=True) or {}
     script = data.get("script", "")
     engine = data.get("engine", "14.9")
+
+    # รองรับ URL ด้วย
+    if not script and data.get("url"):
+        script, err = fetch_script_from_url(data["url"])
+        if err:
+            return jsonify({"error": f"fetch failed: {err}"}), 400
 
     if not script:
         return jsonify({"error": "empty script"}), 400
@@ -263,6 +276,8 @@ def api_health():
         "repo": os.path.exists(DEOBF_DIR),
         "bin": os.path.exists(os.path.join(BIN_DIR, "luau-ast")),
         "logo": os.path.exists(LOGO_PATH),
+        "setup_done": SETUP_DONE,
+        "setup_msg": SETUP_MSG,
     })
 
 
