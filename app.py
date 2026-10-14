@@ -167,7 +167,7 @@ def api_analyze():
         return jsonify({"error": "script too short"}), 400
 
     result = analyze(script)
-    result["script"] = script  # ← ส่ง script กลับให้ frontend
+    result["script"] = script
     cmd = (f"python cli.py input.lua -o output.lua "
            f"--engine {result['version'] if result['version'] != 'unknown' else '14.9'}")
     result["command"] = cmd
@@ -183,8 +183,8 @@ def api_deobf():
     data = request.get_json(silent=True) or {}
     script = data.get("script", "")
     engine = data.get("engine", "14.9")
+    executor = data.get("executor", "delta")
 
-    # รองรับ URL ด้วย
     if not script and data.get("url"):
         script, err = fetch_script_from_url(data["url"])
         if err:
@@ -206,25 +206,34 @@ def api_deobf():
     if not os.path.isdir(cli_dir):
         return jsonify({"error": "deobf cli folder not found"}), 500
 
+    # ============================================================
+    # ANTI-TAMPER BYPASS FLAGS
+    # ============================================================
     args = [
         "python", "cli.py", in_path,
         "-o", out_path,
         "--engine", engine,
-        "--strings",
-        "--max-runs", "50",
-        "--devirt-rounds", "10",
-        "--timeout", "500",
+        "--executor", executor,       # บอก executor (Luraph optimizer)
+        "--strings",                  # dump strings
+        "--max-runs", "500",          # 500 รอบ (default 20)
+        "--devirt-rounds", "50",      # 50 devirt rounds (default 5)
+        "--timeout", "300",           # 300s timeout (default 20s)
+        "--budget", "10000000",       # 10M budget
+        "--trace-fallback",           # fallback tracing
+        "--no-hooks",                 # ปิด hook patch (Luraph anti-tamper)
+        "--keep-harness",             # เก็บ harness
+        "--keep-work",                # เก็บ work dir
         "--debug",
     ]
 
     try:
         proc = subprocess.run(
             args, cwd=cli_dir, capture_output=True,
-            text=True, timeout=600
+            text=True, timeout=900
         )
     except subprocess.TimeoutExpired:
         return jsonify({
-            "error": "deobfuscation timed out (600s)",
+            "error": "deobfuscation timed out (900s)",
             "stdout": "", "stderr": "timeout"
         }), 504
     except Exception as e:
@@ -236,8 +245,8 @@ def api_deobf():
     if not os.path.exists(out_path):
         return jsonify({
             "error": "deobfuscation failed (no output file)",
-            "stdout": proc.stdout[-6000:],
-            "stderr": proc.stderr[-6000:],
+            "stdout": proc.stdout[-8000:],
+            "stderr": proc.stderr[-8000:],
             "returncode": proc.returncode,
         }), 500
 
@@ -248,8 +257,8 @@ def api_deobf():
         "success": True,
         "output": output,
         "size": len(output),
-        "stdout": proc.stdout[-6000:],
-        "stderr": proc.stderr[-6000:],
+        "stdout": proc.stdout[-8000:],
+        "stderr": proc.stderr[-8000:],
         "returncode": proc.returncode,
     })
 
