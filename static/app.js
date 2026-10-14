@@ -102,9 +102,16 @@ async function doDeobf() {
         return setStatus("No script to deobfuscate", "error");
     }
 
-    setStatus("Deobfuscating... (อาจใช้เวลา 1-5 นาที)", "working");
+    setStatus("Deobfuscating... (อาจใช้เวลา 5-15 นาที)", "working");
+
     const engine = "14.9";
-    const { ok, data } = await post("/api/deobf", { script, engine });
+    const executor = "delta";   // ← ส่ง executor ให้ backend
+
+    const { ok, data } = await post("/api/deobf", {
+        script,
+        engine,
+        executor
+    });
 
     if (!ok) {
         setStatus("Deobf failed: " + (data.error || "unknown"), "error");
