@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const state = { script: "", output: "" };
+const state = { script: "", output: "", engine: "luraph_14.9" };
 
 function setStatus(msg, type) {
     const el = $("status");
@@ -29,8 +29,8 @@ function renderAnalysis(r) {
     };
     row("Size", (r.size || 0).toLocaleString() + " bytes");
     row("Lines", (r.lines || 0).toLocaleString());
-    row("Obfuscator", r.obfuscator, r.obfuscator === "Luraph" ? "ok" : "err");
-    row("Version", r.version, r.version !== "unknown" ? "ok" : "err");
+    row("Obfuscator", r.obfuscator, r.obfuscator !== "unknown" ? "ok" : "err");
+    row("Version", r.version, r.version !== "unknown" ? "ok" : "warn");
     row("Opcode Handlers", r.opcode_handlers, r.opcode_handlers > 100 ? "ok" : "warn");
     row("Constants", r.constants, r.constants > 100 ? "ok" : "warn");
     row("Magic Bytes",
@@ -39,6 +39,8 @@ function renderAnalysis(r) {
     row("Encrypted Bytecode",
         r.encrypted_bytecode ? "Present" : "None",
         r.encrypted_bytecode ? "ok" : "warn");
+    if (r.suggested_engine)
+        row("Suggested Engine", r.suggested_engine, "ok");
     if (r.warnings && r.warnings.length)
         row("Warnings", r.warnings.join(" | "), "warn");
     if (r.command)
@@ -53,13 +55,19 @@ async function doFetch() {
     const { ok, data } = await post("/api/analyze", { url });
     if (!ok) return setStatus("Error: " + (data.error || "unknown"), "error");
 
-    // เก็บ script ที่ server ส่งกลับมา → ไม่ต้อง clear
     if (data.script) {
         state.script = data.script;
         $("scriptBody").value = data.script;
     }
 
     renderAnalysis(data);
+
+    // auto-select suggested engine
+    if (data.suggested_engine && $("engineSelect")) {
+        $("engineSelect").value = data.suggested_engine;
+        state.engine = data.suggested_engine;
+    }
+
     setStatus("Fetch + analyze OK (" + (data.size || 0).toLocaleString() + " bytes)", "success");
 }
 
@@ -67,7 +75,6 @@ async function doAnalyze() {
     let script = $("scriptBody").value.trim();
     const url = $("scriptUrl").value.trim();
 
-    // ถ้า script สั้นแต่มี URL → fetch ก่อน
     if ((!script || script.length < 100) && url) {
         return doFetch();
     }
@@ -79,14 +86,21 @@ async function doAnalyze() {
     if (!ok) return setStatus("Error: " + (data.error || "unknown"), "error");
     state.script = script;
     renderAnalysis(data);
+
+    if (data.suggested_engine && $("engineSelect")) {
+        $("engineSelect").value = data.suggested_engine;
+        state.engine = data.suggested_engine;
+    }
+
     setStatus("Analysis complete", "success");
 }
 
 async function doDeobf() {
     let script = $("scriptBody").value.trim();
     const url = $("scriptUrl").value.trim();
+    const engine = $("engineSelect") ? $("engineSelect").value : "luraph_14.9";
+    state.engine = engine;
 
-    // ถ้าไม่มี script แต่มี URL → fetch ก่อน
     if ((!script || script.length < 100) && url) {
         setStatus("Fetching script first...", "working");
         const { ok, data } = await post("/api/analyze", { url });
@@ -102,21 +116,16 @@ async function doDeobf() {
         return setStatus("No script to deobfuscate", "error");
     }
 
-    setStatus("Deobfuscating... (อาจใช้เวลา 5-15 นาที)", "working");
+    setStatus(`Deobfuscating with ${engine}... (อาจใช้เวลา 1-15 นาที)`, "working");
 
-    const engine = "14.9";
-    const executor = "delta";   // ← ส่ง executor ให้ backend
-
-    const { ok, data } = await post("/api/deobf", {
-        script,
-        engine,
-        executor
-    });
+    const { ok, data } = await post("/api/deobf", { script, engine });
 
     if (!ok) {
         setStatus("Deobf failed: " + (data.error || "unknown"), "error");
         if (data.stdout || data.stderr) {
             $("outputPre").textContent =
+                "ENGINE: " + (data.engine || engine) + "\n" +
+                "RETURN CODE: " + (data.returncode != null ? data.returncode : "n/a") + "\n\n" +
                 "STDOUT:\n" + (data.stdout || "") +
                 "\n\nSTDERR:\n" + (data.stderr || "");
             $("outputPanel").style.display = "block";
@@ -127,7 +136,7 @@ async function doDeobf() {
     state.output = data.output;
     $("outputPre").textContent = data.output;
     $("outputPanel").style.display = "block";
-    setStatus("Deobfuscation OK (" + data.size.toLocaleString() + " bytes)", "success");
+    setStatus("Deobfuscation OK (" + data.size.toLocaleString() + " bytes) via " + data.engine, "success");
 }
 
 async function doDownload() {
@@ -140,7 +149,7 @@ async function doDownload() {
     const blob = await r.blob();
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "deobfuscated.lua";
+    a.download = "deobfuscated_" + state.engine + ".lua";
     a.click();
 }
 
@@ -160,9 +169,19 @@ function doClear() {
     state.script = ""; state.output = "";
 }
 
+// ============================================================
+// WIRE UP
+// ============================================================
 $("btnFetch").onclick = doFetch;
 $("btnAnalyze").onclick = doAnalyze;
 $("btnDeobf").onclick = doDeobf;
 $("btnDownload").onclick = doDownload;
 $("btnCopy").onclick = doCopy;
 $("btnClear").onclick = doClear;
+
+if ($("engineSelect")) {
+    $("engineSelect").onchange = (e) => {
+        state.engine = e.target.value;
+        setStatus("Engine: " + state.engine, "working");
+    };
+}
