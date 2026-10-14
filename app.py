@@ -16,14 +16,14 @@ LOGO_PATH = os.path.join(os.path.dirname(__file__), "static", "logo.png")
 
 
 # ============================================================
-# SETUP: clone repo on first run
+# SETUP
 # ============================================================
 def ensure_repo():
     if not os.path.exists(DEOBF_DIR):
         try:
             subprocess.run(
                 ["git", "clone", "--depth=1", DEOBF_REPO, DEOBF_DIR],
-                check=True, capture_output=True, timeout=180
+                check=True, capture_output=True, timeout=300
             )
         except Exception as e:
             return False, f"clone failed: {e}"
@@ -145,20 +145,40 @@ def api_deobf():
     if not os.path.isdir(cli_dir):
         return jsonify({"error": "deobf cli folder not found"}), 500
 
+    # ---- สร้าง args ----
+    args = [
+        "python", "cli.py", in_path,
+        "-o", out_path,
+        "--engine", engine,
+        "--strings",           # dump string constants
+        "--max-runs", "50",    # จำนวนรอบ max
+        "--devirt-rounds", "10",  # devirtualize 10 รอบ
+        "--timeout", "500",    # timeout in cli
+        "--debug",             # debug log
+    ]
+
     try:
         proc = subprocess.run(
-            ["python", "cli.py", in_path, "-o", out_path,
-             "--engine", engine, "--force"],
-            cwd=cli_dir, capture_output=True, text=True, timeout=600
+            args, cwd=cli_dir, capture_output=True,
+            text=True, timeout=600
         )
     except subprocess.TimeoutExpired:
-        return jsonify({"error": "deobfuscation timed out (600s)"}), 504
+        return jsonify({
+            "error": "deobfuscation timed out (600s)",
+            "stdout": "", "stderr": "timeout"
+        }), 504
+    except Exception as e:
+        return jsonify({
+            "error": f"subprocess error: {e}",
+            "stdout": "", "stderr": str(e)
+        }), 500
 
     if not os.path.exists(out_path):
         return jsonify({
-            "error": "deobfuscation failed",
-            "stdout": proc.stdout[-4000:],
-            "stderr": proc.stderr[-4000:],
+            "error": "deobfuscation failed (no output file)",
+            "stdout": proc.stdout[-6000:],
+            "stderr": proc.stderr[-6000:],
+            "returncode": proc.returncode,
         }), 500
 
     with open(out_path, "r", encoding="utf-8", errors="replace") as f:
@@ -168,8 +188,9 @@ def api_deobf():
         "success": True,
         "output": output,
         "size": len(output),
-        "stdout": proc.stdout[-4000:],
-        "stderr": proc.stderr[-4000:],
+        "stdout": proc.stdout[-6000:],
+        "stderr": proc.stderr[-6000:],
+        "returncode": proc.returncode,
     })
 
 
