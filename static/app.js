@@ -49,18 +49,31 @@ function renderAnalysis(r) {
 async function doFetch() {
     const url = $("scriptUrl").value.trim();
     if (!url) return setStatus("ใส่ URL ก่อน", "error");
-    setStatus("Fetching...", "working");
+    setStatus("Fetching + analyzing...", "working");
     const { ok, data } = await post("/api/analyze", { url });
     if (!ok) return setStatus("Error: " + (data.error || "unknown"), "error");
-    state.script = $("scriptBody").value; // server fetched it; store local copy if pasted later
-    $("scriptBody").value = "(fetched by server — see analysis)";
+
+    // เก็บ script ที่ server ส่งกลับมา → ไม่ต้อง clear
+    if (data.script) {
+        state.script = data.script;
+        $("scriptBody").value = data.script;
+    }
+
     renderAnalysis(data);
-    setStatus("Fetch + analyze OK", "success");
+    setStatus("Fetch + analyze OK (" + (data.size || 0).toLocaleString() + " bytes)", "success");
 }
 
 async function doAnalyze() {
-    const script = $("scriptBody").value.trim();
+    let script = $("scriptBody").value.trim();
+    const url = $("scriptUrl").value.trim();
+
+    // ถ้า script สั้นแต่มี URL → fetch ก่อน
+    if ((!script || script.length < 100) && url) {
+        return doFetch();
+    }
+
     if (script.length < 100) return setStatus("Code too short", "error");
+
     setStatus("Analyzing...", "working");
     const { ok, data } = await post("/api/analyze", { script });
     if (!ok) return setStatus("Error: " + (data.error || "unknown"), "error");
@@ -70,11 +83,29 @@ async function doAnalyze() {
 }
 
 async function doDeobf() {
-    const script = $("scriptBody").value.trim() || state.script;
-    if (!script || script.length < 100) return setStatus("No script", "error");
-    setStatus("Deobfuscating (อาจใช้เวลา 1-5 นาที)...", "working");
+    let script = $("scriptBody").value.trim();
+    const url = $("scriptUrl").value.trim();
+
+    // ถ้าไม่มี script แต่มี URL → fetch ก่อน
+    if ((!script || script.length < 100) && url) {
+        setStatus("Fetching script first...", "working");
+        const { ok, data } = await post("/api/analyze", { url });
+        if (!ok) return setStatus("Fetch failed: " + (data.error || "unknown"), "error");
+        if (data.script) {
+            state.script = data.script;
+            $("scriptBody").value = data.script;
+            script = data.script;
+        }
+    }
+
+    if (!script || script.length < 100) {
+        return setStatus("No script to deobfuscate", "error");
+    }
+
+    setStatus("Deobfuscating... (อาจใช้เวลา 1-5 นาที)", "working");
     const engine = "14.9";
     const { ok, data } = await post("/api/deobf", { script, engine });
+
     if (!ok) {
         setStatus("Deobf failed: " + (data.error || "unknown"), "error");
         if (data.stdout || data.stderr) {
@@ -85,10 +116,11 @@ async function doDeobf() {
         }
         return;
     }
+
     state.output = data.output;
     $("outputPre").textContent = data.output;
     $("outputPanel").style.display = "block";
-    setStatus("Deobfuscation OK (" + data.size + " bytes)", "success");
+    setStatus("Deobfuscation OK (" + data.size.toLocaleString() + " bytes)", "success");
 }
 
 async function doDownload() {
